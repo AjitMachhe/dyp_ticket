@@ -6,6 +6,8 @@ import {
   Plus,
   Settings2,
   Shield,
+  ShieldAlert,
+  UserPlus,
   Users,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
@@ -22,8 +24,9 @@ type AdminTab = 'institutions' | 'categories' | 'users';
 
 export const AdminConfigPage: React.FC = () => {
   const { institutions, departments, refreshMetadata, roleMeta } = useAuth();
-  const [activeTab, setActiveTab] = useState<AdminTab>('institutions');
+  const [activeTab, setActiveTab] = useState<AdminTab>('users');
   const [toast, setToast] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Add Institution Form
   const [instName, setInstName] = useState('');
@@ -42,14 +45,26 @@ export const AdminConfigPage: React.FC = () => {
   // Users & Roles
   const [users, setUsers] = useState<UserProfile[]>([]);
 
+  // Create Staff / Admin Form
+  const [newFullName, setNewFullName] = useState('');
+  const [newEmpId, setNewEmpId] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [newRole, setNewRole] = useState<UserRole>('support_staff');
+  const [newUserInstId, setNewUserInstId] = useState<string>('');
+  const [newUserDeptId, setNewUserDeptId] = useState<string>('');
+  const [creatingUser, setCreatingUser] = useState(false);
+
   const showToast = (msg: string) => {
+    setErrorMsg(null);
     setToast(msg);
-    setTimeout(() => setToast(null), 3500);
+    setTimeout(() => setToast(null), 4000);
   };
 
   useEffect(() => {
-    if (institutions.length > 0 && !selectedInstId) {
-      setSelectedInstId(institutions[0].id);
+    if (institutions.length > 0) {
+      if (!selectedInstId) setSelectedInstId(institutions[0].id);
+      if (!newUserInstId) setNewUserInstId(institutions[0].id);
     }
   }, [institutions]);
 
@@ -87,6 +102,36 @@ export const AdminConfigPage: React.FC = () => {
   useEffect(() => {
     loadUsers();
   }, []);
+
+  // Create New Staff / Faculty / Admin Account
+  const handleCreateStaffOrAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newFullName.trim() || !newEmail.trim() || !newPassword.trim()) return;
+    setErrorMsg(null);
+    setCreatingUser(true);
+
+    const { error } = await supabase.rpc('admin_create_user', {
+      p_email: newEmail.trim(),
+      p_password: newPassword,
+      p_full_name: newFullName.trim(),
+      p_role: newRole,
+      p_institution_id: newUserInstId || null,
+      p_department_id: newUserDeptId || null,
+      p_employee_id: newEmpId.trim() || null,
+    });
+
+    if (error) {
+      setErrorMsg(error.message);
+    } else {
+      setNewFullName('');
+      setNewEmpId('');
+      setNewEmail('');
+      setNewPassword('');
+      await loadUsers();
+      showToast(`Account created for ${newFullName.trim()} (${ROLE_CONFIG[newRole].label})`);
+    }
+    setCreatingUser(false);
+  };
 
   // Add New College + Auto-Seed 6 Standard Departments
   const handleAddInstitution = async (e: React.FormEvent) => {
@@ -173,6 +218,7 @@ export const AdminConfigPage: React.FC = () => {
   };
 
   const instDepts = departments.filter((d) => d.institution_id === selectedInstId);
+  const newUserDepts = departments.filter((d) => d.institution_id === newUserInstId);
   const assignableStaff = users.filter((u) =>
     ['support_staff', 'department_hod', 'college_admin'].includes(u.role)
   );
@@ -183,10 +229,11 @@ export const AdminConfigPage: React.FC = () => {
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
           <Settings2 className="w-6 h-6 text-brand-600" />
-          <span>Colleges, Routing Rules & Role Management</span>
+          <span>Colleges, Routing Rules &amp; Role Management</span>
         </h1>
         <p className="text-sm text-slate-500 mt-0.5">
-          Configure D. Y. Patil Group institutions, auto-assignment rules, and 8-tier user access
+          Create Staff &amp; Admin accounts, manage D. Y. Patil Group institutions, and configure
+          auto-assignment rules
         </p>
       </div>
 
@@ -197,12 +244,19 @@ export const AdminConfigPage: React.FC = () => {
         </div>
       )}
 
+      {errorMsg && (
+        <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-700 flex items-center gap-2">
+          <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0" />
+          <span>{errorMsg}</span>
+        </div>
+      )}
+
       {/* Navigation Tabs */}
       <div className="flex flex-wrap gap-2 bg-white p-2 rounded-2xl border border-slate-200/80 shadow-apple-sm w-fit">
         {[
+          { id: 'users', label: 'Staff & Admin Accounts', icon: Users },
           { id: 'institutions', label: 'Institutions & Colleges', icon: Building2 },
           { id: 'categories', label: 'Categories & Auto-Routing', icon: Layers },
-          { id: 'users', label: 'Users & 8-Role Access', icon: Users },
         ].map((tab) => {
           const Icon = tab.icon;
           return (
@@ -222,7 +276,252 @@ export const AdminConfigPage: React.FC = () => {
         })}
       </div>
 
-      {/* TAB 1: INSTITUTIONS */}
+      {/* TAB 1: CREATE & MANAGE STAFF / ADMIN ACCOUNTS */}
+      {activeTab === 'users' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Create New Staff / Admin Form */}
+          {roleMeta.canManageInstitutions && (
+            <form
+              onSubmit={handleCreateStaffOrAdmin}
+              className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-apple-sm space-y-4 h-fit"
+            >
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-brand-50 text-brand-600 flex items-center justify-center">
+                  <UserPlus className="w-4 h-4" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-slate-900">Create Staff / Admin</h2>
+                  <p className="text-[11px] text-slate-400">
+                    Instant active login with assigned role
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Full Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newFullName}
+                  onChange={(e) => setNewFullName(e.target.value)}
+                  placeholder="e.g. Prof. S. K. Deshmukh"
+                  className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-sm"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Assign Role *
+                  </label>
+                  <select
+                    value={newRole}
+                    onChange={(e) => setNewRole(e.target.value as UserRole)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold bg-white"
+                  >
+                    {Object.values(ROLE_CONFIG).map((r) => (
+                      <option key={r.key} value={r.key}>
+                        {r.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Emp / Staff ID
+                  </label>
+                  <input
+                    type="text"
+                    value={newEmpId}
+                    onChange={(e) => setNewEmpId(e.target.value)}
+                    placeholder="EMP-104"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  College / Institution
+                </label>
+                <select
+                  value={newUserInstId}
+                  onChange={(e) => {
+                    setNewUserInstId(e.target.value);
+                    setNewUserDeptId('');
+                  }}
+                  className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs bg-white"
+                >
+                  <option value="">All / Central University</option>
+                  {institutions.map((i) => (
+                    <option key={i.id} value={i.id}>
+                      {i.code} — {i.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Department (For HOD / Support Staff)
+                </label>
+                <select
+                  value={newUserDeptId}
+                  onChange={(e) => setNewUserDeptId(e.target.value)}
+                  className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs bg-white"
+                >
+                  <option value="">All Departments</option>
+                  {newUserDepts.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Login Email *
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
+                  placeholder="staff@dypatilgroup.edu.in"
+                  className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Initial Password *
+                </label>
+                <input
+                  type="text"
+                  required
+                  minLength={6}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Min 6 characters"
+                  className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-sm"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={creatingUser}
+                className="w-full py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer"
+              >
+                <UserPlus className="w-4 h-4" />
+                <span>{creatingUser ? 'Creating Account...' : 'Create User Account'}</span>
+              </button>
+            </form>
+          )}
+
+          {/* Existing Users Directory */}
+          <div
+            className={`${
+              roleMeta.canManageInstitutions ? 'lg:col-span-2' : 'lg:col-span-3'
+            } bg-white rounded-3xl border border-slate-200/80 p-6 shadow-apple-sm space-y-4`}
+          >
+            <div>
+              <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <Shield className="w-4 h-4 text-brand-600" />
+                <span>All Campus Accounts ({users.length})</span>
+              </h2>
+              <p className="text-xs text-slate-500">
+                Modify roles, college assignments, or department mappings anytime
+              </p>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-slate-100 text-[11px] font-bold uppercase text-slate-400">
+                    <th className="py-3 px-3">User</th>
+                    <th className="py-3 px-3">Role</th>
+                    <th className="py-3 px-3">College</th>
+                    <th className="py-3 px-3">Department</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {users.map((u) => {
+                    const userDepts = departments.filter(
+                      (d) => d.institution_id === u.institution_id
+                    );
+                    return (
+                      <tr key={u.id}>
+                        <td className="py-3.5 px-3">
+                          <div className="font-semibold text-slate-900">{u.full_name}</div>
+                          <div className="text-xs text-slate-400">{u.email}</div>
+                        </td>
+                        <td className="py-3.5 px-3">
+                          <select
+                            value={u.role}
+                            onChange={(e) =>
+                              handleUpdateUserRole(u.id, { role: e.target.value as UserRole })
+                            }
+                            className="px-2.5 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold bg-white"
+                          >
+                            {Object.values(ROLE_CONFIG).map((r) => (
+                              <option key={r.key} value={r.key}>
+                                {r.label}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="py-3.5 px-3">
+                          <select
+                            value={u.institution_id || ''}
+                            onChange={(e) =>
+                              handleUpdateUserRole(u.id, {
+                                institution_id: e.target.value || null,
+                                department_id: null,
+                              })
+                            }
+                            className="px-2.5 py-1.5 rounded-xl border border-slate-200 text-xs bg-white max-w-[160px]"
+                          >
+                            <option value="">All / Central</option>
+                            {institutions.map((i) => (
+                              <option key={i.id} value={i.id}>
+                                {i.code} — {i.name}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="py-3.5 px-3">
+                          <select
+                            value={u.department_id || ''}
+                            onChange={(e) =>
+                              handleUpdateUserRole(u.id, {
+                                department_id: e.target.value || null,
+                              })
+                            }
+                            className="px-2.5 py-1.5 rounded-xl border border-slate-200 text-xs bg-white max-w-[160px]"
+                          >
+                            <option value="">All Depts</option>
+                            {userDepts.map((d) => (
+                              <option key={d.id} value={d.id}>
+                                {d.name}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 2: INSTITUTIONS */}
       {activeTab === 'institutions' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {roleMeta.canManageInstitutions && (
@@ -315,7 +614,7 @@ export const AdminConfigPage: React.FC = () => {
         </div>
       )}
 
-      {/* TAB 2: CATEGORIES & AUTO-ROUTING */}
+      {/* TAB 3: CATEGORIES & AUTO-ROUTING */}
       {activeTab === 'categories' && (
         <div className="space-y-6">
           <div className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-apple-sm grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -354,7 +653,10 @@ export const AdminConfigPage: React.FC = () => {
           </div>
 
           <div className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-apple-sm space-y-5">
-            <form onSubmit={handleAddCategory} className="flex flex-wrap items-end gap-3 pb-5 border-b border-slate-100">
+            <form
+              onSubmit={handleAddCategory}
+              className="flex flex-wrap items-end gap-3 pb-5 border-b border-slate-100"
+            >
               <div className="flex-1 min-w-[200px]">
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
                   New Category Name
@@ -466,111 +768,6 @@ export const AdminConfigPage: React.FC = () => {
               </table>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* TAB 3: USERS & 8-ROLE ACCESS CONTROL */}
-      {activeTab === 'users' && (
-        <div className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-apple-sm space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                <Shield className="w-4 h-4 text-brand-600" />
-                Registered Users & Role Assignments
-              </h2>
-              <p className="text-xs text-slate-500">
-                Assign users to one of the 8 institutional roles; their login automatically locks to
-                these permissions.
-              </p>
-            </div>
-          </div>
-
-          {users.length === 0 ? (
-            <p className="text-xs text-slate-400 py-8 text-center">
-              No registered accounts in `profiles` yet. Users appear here automatically once they
-              create an account on the Login screen.
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-sm">
-                <thead>
-                  <tr className="border-b border-slate-100 text-[11px] font-bold uppercase text-slate-400">
-                    <th className="py-3 px-3">User</th>
-                    <th className="py-3 px-3">Assigned Role</th>
-                    <th className="py-3 px-3">Assigned College</th>
-                    <th className="py-3 px-3">Assigned Department</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {users.map((u) => {
-                    const userDepts = departments.filter(
-                      (d) => d.institution_id === u.institution_id
-                    );
-                    return (
-                      <tr key={u.id}>
-                        <td className="py-3.5 px-3">
-                          <div className="font-semibold text-slate-900">{u.full_name}</div>
-                          <div className="text-xs text-slate-400">{u.email}</div>
-                        </td>
-                        <td className="py-3.5 px-3">
-                          <select
-                            value={u.role}
-                            onChange={(e) =>
-                              handleUpdateUserRole(u.id, { role: e.target.value as UserRole })
-                            }
-                            className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold bg-white"
-                          >
-                            {Object.values(ROLE_CONFIG).map((r) => (
-                              <option key={r.key} value={r.key}>
-                                {r.label}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="py-3.5 px-3">
-                          <select
-                            value={u.institution_id || ''}
-                            onChange={(e) =>
-                              handleUpdateUserRole(u.id, {
-                                institution_id: e.target.value || null,
-                                department_id: null,
-                              })
-                            }
-                            className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs bg-white"
-                          >
-                            <option value="">All / Central Group</option>
-                            {institutions.map((i) => (
-                              <option key={i.id} value={i.id}>
-                                {i.code} — {i.name}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="py-3.5 px-3">
-                          <select
-                            value={u.department_id || ''}
-                            onChange={(e) =>
-                              handleUpdateUserRole(u.id, {
-                                department_id: e.target.value || null,
-                              })
-                            }
-                            className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs bg-white"
-                          >
-                            <option value="">All Departments</option>
-                            {userDepts.map((d) => (
-                              <option key={d.id} value={d.id}>
-                                {d.name}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
         </div>
       )}
     </div>
