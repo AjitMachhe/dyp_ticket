@@ -105,11 +105,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data, error } = await supabase.auth.signUp({
       email: formData.email,
       password: formData.password,
+      options: {
+        data: {
+          full_name: formData.full_name,
+          role: formData.role,
+          institution_id: formData.institution_id || '',
+          department_id: formData.department_id || '',
+          employee_or_prn_id: formData.employee_or_prn_id || '',
+        },
+      },
     });
     if (error) return { error: error.message };
 
     if (data.user) {
-      const { error: profileErr } = await supabase.from('profiles').insert({
+      const { error: profileErr } = await supabase.from('profiles').upsert({
         id: data.user.id,
         full_name: formData.full_name,
         email: formData.email,
