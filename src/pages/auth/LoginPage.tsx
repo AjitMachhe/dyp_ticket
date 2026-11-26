@@ -1,21 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, CheckCircle2 } from 'lucide-react';
+import { ArrowRight, CheckCircle2, GraduationCap } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { ROLE_CONFIG } from '../../lib/rbac';
-import type { UserRole } from '../../types/database';
 
 export const LoginPage: React.FC = () => {
-  const { profile, signIn, signUp, institutions, departments } = useAuth();
+  const { profile, signIn, signUp, institutions } = useAuth();
   const navigate = useNavigate();
 
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
-  const [role, setRole] = useState<UserRole>('student');
   const [institutionId, setInstitutionId] = useState('');
-  const [departmentId, setDepartmentId] = useState('');
   const [idCode, setIdCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -32,8 +28,6 @@ export const LoginPage: React.FC = () => {
     }
   }, [institutions, institutionId]);
 
-  const instDepartments = departments.filter((d) => d.institution_id === institutionId);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -48,9 +42,8 @@ export const LoginPage: React.FC = () => {
         email,
         password,
         full_name: fullName,
-        role,
+        role: 'student',
         institution_id: institutionId || institutions[0]?.id || '',
-        department_id: departmentId || undefined,
         employee_or_prn_id: idCode,
       });
       if (res.error) setError(res.error);
@@ -92,7 +85,7 @@ export const LoginPage: React.FC = () => {
                 mode === 'register' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500'
               }`}
             >
-              New User Registration
+              Student Registration
             </button>
           </div>
 
@@ -105,47 +98,39 @@ export const LoginPage: React.FC = () => {
           <form onSubmit={handleSubmit} className="space-y-4">
             {mode === 'register' && (
               <>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Full Name *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    placeholder="Enter your full name"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-600"
-                  />
+                <div className="p-3 rounded-xl bg-teal-50/80 border border-teal-200/80 flex items-center gap-2.5 text-xs text-teal-900">
+                  <GraduationCap className="w-4 h-4 text-teal-600 shrink-0" />
+                  <span>
+                    Self-registration creates a <strong>Student</strong> account. Faculty &amp;
+                    Staff roles are assigned by Administration.
+                  </span>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Account Role *
-                    </label>
-                    <select
-                      value={role}
-                      onChange={(e) => setRole(e.target.value as UserRole)}
-                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm bg-white"
-                    >
-                      {Object.values(ROLE_CONFIG).map((r) => (
-                        <option key={r.key} value={r.key}>
-                          {r.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      PRN / Emp ID
+                      Full Name *
                     </label>
                     <input
                       type="text"
+                      required
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      placeholder="Student full name"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Student PRN / Roll No *
+                    </label>
+                    <input
+                      type="text"
+                      required
                       value={idCode}
                       onChange={(e) => setIdCode(e.target.value)}
                       placeholder="DYP2026001"
-                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
                     />
                   </div>
                 </div>
@@ -156,10 +141,7 @@ export const LoginPage: React.FC = () => {
                   </label>
                   <select
                     value={institutionId}
-                    onChange={(e) => {
-                      setInstitutionId(e.target.value);
-                      setDepartmentId('');
-                    }}
+                    onChange={(e) => setInstitutionId(e.target.value)}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm bg-white"
                   >
                     {institutions.map((inst) => (
@@ -169,27 +151,6 @@ export const LoginPage: React.FC = () => {
                     ))}
                   </select>
                 </div>
-
-                {(role === 'department_hod' || role === 'support_staff') && (
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Department *
-                    </label>
-                    <select
-                      required
-                      value={departmentId}
-                      onChange={(e) => setDepartmentId(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm bg-white"
-                    >
-                      <option value="">Select Department</option>
-                      {instDepartments.map((d) => (
-                        <option key={d.id} value={d.id}>
-                          {d.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
               </>
             )}
 
@@ -230,7 +191,7 @@ export const LoginPage: React.FC = () => {
                   ? 'Please wait...'
                   : mode === 'login'
                   ? 'Sign In to Portal'
-                  : 'Create Account & Enter'}
+                  : 'Register as Student'}
               </span>
               <ArrowRight className="w-4 h-4" />
             </button>
