@@ -25,7 +25,7 @@ const ALL_STATUSES: TicketStatus[] = [
 ];
 
 export const TicketsListPage: React.FC = () => {
-  const { selectedInstitutionId, departments, roleMeta, activeRole } = useAuth();
+  //const { selectedInstitutionId, departments, roleMeta, activeRole } = useAuth();
   const navigate = useNavigate();
 
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -36,8 +36,10 @@ export const TicketsListPage: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('ACTIVE');
   const [priorityFilter, setPriorityFilter] = useState<string>('ALL');
   const [deptFilter, setDeptFilter] = useState<string>('ALL');
+  const { profile, selectedInstitutionId, departments, roleMeta, activeRole } = useAuth();
 
   const fetchTickets = async () => {
+    if (!profile) return;
     setLoading(true);
     let query = supabase
       .from('tickets')
@@ -53,7 +55,13 @@ export const TicketsListPage: React.FC = () => {
       )
       .order('created_at', { ascending: false });
 
-    if (selectedInstitutionId !== 'ALL') {
+    if (roleMeta.scope === 'self') {
+      query = query.eq('created_by', profile.id);
+    } else if (roleMeta.scope === 'assigned') {
+      query = query.eq('assigned_to', profile.id);
+    } else if (roleMeta.scope === 'department' && profile.department_id) {
+      query = query.eq('department_id', profile.department_id);
+    } else if (selectedInstitutionId !== 'ALL') {
       query = query.eq('institution_id', selectedInstitutionId);
     }
 
@@ -66,52 +74,39 @@ export const TicketsListPage: React.FC = () => {
 
   useEffect(() => {
     fetchTickets();
-  }, [selectedInstitutionId, activeRole]);
-
-  const filteredTickets = useMemo(() => {
-    return tickets.filter((t) => {
-      if (statusFilter === 'ACTIVE' && (t.status === 'Closed' || t.status === 'Resolved')) {
-        return false;
-      }
-      if (statusFilter === 'OVERDUE') {
-        const isOverdue =
-          t.resolution_due_at &&
-          new Date(t.resolution_due_at).getTime() < Date.now() &&
-          t.status !== 'Resolved' &&
-          t.status !== 'Closed';
-        if (!isOverdue) return false;
-      }
-      if (statusFilter === 'ESCALATED' && !t.is_escalated) return false;
-      if (
-        statusFilter !== 'ALL' &&
-        statusFilter !== 'ACTIVE' &&
-        statusFilter !== 'OVERDUE' &&
-        statusFilter !== 'ESCALATED' &&
-        t.status !== statusFilter
-      ) {
-        return false;
-      }
-
-      if (priorityFilter !== 'ALL' && t.priority !== priorityFilter) return false;
-      if (deptFilter !== 'ALL' && t.department?.name !== deptFilter) return false;
-
-      if (search.trim()) {
-        const q = search.toLowerCase();
-        const matchNum = t.ticket_number?.toLowerCase().includes(q);
-        const matchSub = t.subject?.toLowerCase().includes(q);
-        const matchCat = t.category?.name?.toLowerCase().includes(q);
-        const matchLoc = t.location_tag?.toLowerCase().includes(q);
-        if (!matchNum && !matchSub && !matchCat && !matchLoc) return false;
-      }
-
-      return true;
-    });
-  }, [tickets, statusFilter, priorityFilter, deptFilter, search]);
+  }, [profile?.id, selectedInstitutionId, activeRole]);
 
   const uniqueDeptNames = useMemo(() => {
     const names = new Set(departments.map((d) => d.name));
     return Array.from(names);
   }, [departments]);
+
+  const filteredTickets = useMemo(() => {
+    const searchTerm = search.trim().toLowerCase();
+
+    return tickets.filter((ticket) => {
+      const matchesSearch =
+        !searchTerm ||
+        [ticket.ticket_number, ticket.subject, ticket.location_tag].some((value) =>
+          value?.toLowerCase().includes(searchTerm)
+        );
+      const isActive = !['Resolved', 'Closed'].includes(ticket.status);
+        const isOverdue =
+        isActive &&
+        ticket.resolution_due_at != null &&
+        new Date(ticket.resolution_due_at).getTime() < Date.now();
+      const matchesStatus =
+        statusFilter === 'ALL' ||
+        (statusFilter === 'ACTIVE' && isActive) ||
+        (statusFilter === 'OVERDUE' && isOverdue) ||
+        (statusFilter === 'ESCALATED' && ticket.is_escalated) ||
+        ticket.status === statusFilter;
+      const matchesPriority = priorityFilter === 'ALL' || ticket.priority === priorityFilter;
+      const matchesDepartment = deptFilter === 'ALL' || ticket.department?.name === deptFilter;
+
+      return matchesSearch && matchesStatus && matchesPriority && matchesDepartment;
+    });
+  }, [tickets, search, statusFilter, priorityFilter, deptFilter]);
 
   return (
     <div className="space-y-6">

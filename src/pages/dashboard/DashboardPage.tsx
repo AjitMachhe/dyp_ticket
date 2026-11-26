@@ -1,3 +1,4 @@
+
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -28,42 +29,60 @@ const STATUS_BAR_COLORS: Record<TicketStatus, string> = {
 };
 
 export const DashboardPage: React.FC = () => {
-  const { selectedInstitutionId, institutions, activeRole, roleMeta } = useAuth();
+  const { profile, selectedInstitutionId, institutions, activeRole, roleMeta } = useAuth();
   const navigate = useNavigate();
 
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Load dashboard tickets with role-based filtering
   useEffect(() => {
+    if (!profile) {
+      setLoading(false);
+      return;
+    }
+
     const loadDashboardData = async () => {
       setLoading(true);
+
       let query = supabase
         .from('tickets')
-        .select(
-          `
+        .select(`
           *,
           institution:institutions(id, code, name),
           department:departments(id, name, code),
           category:ticket_categories(id, name)
-        `
-        )
+        `)
         .order('created_at', { ascending: false });
 
-      if (selectedInstitutionId !== 'ALL') {
+      if (roleMeta.scope === 'self') {
+        query = query.eq('created_by', profile.id);
+      } else if (roleMeta.scope === 'assigned') {
+        query = query.eq('assigned_to', profile.id);
+      } else if (roleMeta.scope === 'department' && profile.department_id) {
+        query = query.eq('department_id', profile.department_id);
+      } else if (selectedInstitutionId !== 'ALL') {
         query = query.eq('institution_id', selectedInstitutionId);
       }
 
-      const { data } = await query;
-      if (data) setTickets(data as Ticket[]);
+      const { data, error } = await query;
+
+      if (error) {
+        console.error('Error loading dashboard tickets:', error);
+      } else if (data) {
+        setTickets(data as Ticket[]);
+      }
+
       setLoading(false);
     };
 
     loadDashboardData();
-  }, [selectedInstitutionId, activeRole]);
+  }, [profile, selectedInstitutionId, activeRole, roleMeta]);
 
   // Core KPI Calculations
   const metrics = useMemo(() => {
     const total = tickets.length;
+
     const openActive = tickets.filter((t) =>
       ['Open', 'Assigned', 'In Progress', 'On Hold', 'Reopened'].includes(t.status)
     ).length;
@@ -80,10 +99,13 @@ export const DashboardPage: React.FC = () => {
       (t) => t.status === 'Resolved' || t.status === 'Closed'
     ).length;
 
-    const resolutionRate = total > 0 ? Math.round((resolvedOrClosed / total) * 100) : 100;
-    const escalated = tickets.filter((t) => t.is_escalated && t.status !== 'Closed').length;
+    const resolutionRate =
+      total > 0 ? Math.round((resolvedOrClosed / total) * 100) : 100;
 
-    // Status distribution
+    const escalated = tickets.filter(
+      (t) => t.is_escalated && t.status !== 'Closed'
+    ).length;
+
     const statusCounts: Record<TicketStatus, number> = {
       Open: 0,
       Assigned: 0,
@@ -93,21 +115,34 @@ export const DashboardPage: React.FC = () => {
       Closed: 0,
       Reopened: 0,
     };
+
     tickets.forEach((t) => {
       statusCounts[t.status] = (statusCounts[t.status] || 0) + 1;
     });
 
-    return { total, openActive, overdue, resolutionRate, escalated, statusCounts };
+    return {
+      total,
+      openActive,
+      overdue,
+      resolutionRate,
+      escalated,
+      statusCounts,
+    };
   }, [tickets]);
 
   // College-wise Comparison Matrix
   const collegeComparison = useMemo(() => {
     return institutions.map((inst) => {
-      const instTickets = tickets.filter((t) => t.institution_id === inst.id);
+      const instTickets = tickets.filter(
+        (t) => t.institution_id === inst.id
+      );
+
       const total = instTickets.length;
+
       const open = instTickets.filter((t) =>
         ['Open', 'Assigned', 'In Progress', 'On Hold', 'Reopened'].includes(t.status)
       ).length;
+
       const overdue = instTickets.filter(
         (t) =>
           t.resolution_due_at &&
@@ -115,9 +150,11 @@ export const DashboardPage: React.FC = () => {
           t.status !== 'Resolved' &&
           t.status !== 'Closed'
       ).length;
+
       const solved = instTickets.filter(
         (t) => t.status === 'Resolved' || t.status === 'Closed'
       ).length;
+
       const rate = total > 0 ? Math.round((solved / total) * 100) : 100;
 
       return { ...inst, total, open, overdue, rate };
@@ -127,14 +164,21 @@ export const DashboardPage: React.FC = () => {
   // Department Breakdown
   const deptBreakdown = useMemo(() => {
     const map: Record<string, { name: string; total: number; open: number }> = {};
+
     tickets.forEach((t) => {
       const dName = t.department?.name || 'General';
-      if (!map[dName]) map[dName] = { name: dName, total: 0, open: 0 };
+
+      if (!map[dName]) {
+        map[dName] = { name: dName, total: 0, open: 0 };
+      }
+
       map[dName].total += 1;
+
       if (t.status !== 'Resolved' && t.status !== 'Closed') {
         map[dName].open += 1;
       }
     });
+
     return Object.values(map).sort((a, b) => b.total - a.total);
   }, [tickets]);
 
@@ -153,7 +197,9 @@ export const DashboardPage: React.FC = () => {
               {selectedInstitutionId === 'ALL' ? 'Group-Wide View' : 'College Scope'}
             </span>
           </div>
-          <p className="text-sm text-slate-500 mt-0.5">{roleMeta.description}</p>
+          <p className="text-sm text-slate-500 mt-0.5">
+            {roleMeta.description}
+          </p>
         </div>
 
         <div className="flex items-center gap-2.5">
@@ -165,6 +211,7 @@ export const DashboardPage: React.FC = () => {
               Export Reports
             </button>
           )}
+
           <button
             onClick={() => navigate('/tickets/new')}
             className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs sm:text-sm font-semibold shadow-xs transition cursor-pointer"
@@ -175,7 +222,7 @@ export const DashboardPage: React.FC = () => {
         </div>
       </div>
 
-      {/* 4 Bright Apple/Fluent KPI Stat Cards */}
+      {/* KPI Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div
           onClick={() => navigate('/tickets')}
@@ -241,14 +288,15 @@ export const DashboardPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Middle Analytics Row: Status Overview + Department Load */}
+      {/* Status Overview + Department Load */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Ticket Status Overview */}
         <div className="lg:col-span-2 bg-white rounded-3xl border border-slate-200/80 p-6 sm:p-7 shadow-apple-sm space-y-5">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-base font-bold text-slate-900">Ticket Status Overview</h2>
-              <p className="text-xs text-slate-500">Live distribution across all 7 workflow stages</p>
+              <p className="text-xs text-slate-500">
+                Live distribution across all 7 workflow stages
+              </p>
             </div>
             <Sparkles className="w-4 h-4 text-brand-600" />
           </div>
@@ -256,7 +304,10 @@ export const DashboardPage: React.FC = () => {
           <div className="space-y-3.5">
             {(Object.keys(metrics.statusCounts) as TicketStatus[]).map((st) => {
               const count = metrics.statusCounts[st];
-              const pct = metrics.total > 0 ? Math.round((count / metrics.total) * 100) : 0;
+              const pct = metrics.total > 0
+                ? Math.round((count / metrics.total) * 100)
+                : 0;
+
               return (
                 <div key={st} className="space-y-1.5">
                   <div className="flex items-center justify-between text-xs">
@@ -277,7 +328,6 @@ export const DashboardPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Department Load */}
         <div className="bg-white rounded-3xl border border-slate-200/80 p-6 sm:p-7 shadow-apple-sm space-y-4">
           <h2 className="text-base font-bold text-slate-900">Department Workload</h2>
           <p className="text-xs text-slate-500">Active vs. total requests by unit</p>
@@ -309,7 +359,7 @@ export const DashboardPage: React.FC = () => {
         </div>
       </div>
 
-      {/* College-Wise Performance Comparison (Visible for University Admin / Super Admin / Registrar) */}
+      {/* College-Wise Performance Comparison */}
       {roleMeta.scope === 'all' && (
         <div className="bg-white rounded-3xl border border-slate-200/80 p-6 sm:p-7 shadow-apple-sm space-y-4">
           <div className="flex items-center justify-between">
@@ -374,7 +424,7 @@ export const DashboardPage: React.FC = () => {
         </div>
       )}
 
-      {/* Recent Activity Feed */}
+      {/* Recent Tickets */}
       <div className="bg-white rounded-3xl border border-slate-200/80 p-6 sm:p-7 shadow-apple-sm space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-bold text-slate-900">Recent Tickets</h2>
@@ -387,7 +437,9 @@ export const DashboardPage: React.FC = () => {
         </div>
 
         {tickets.length === 0 ? (
-          <p className="text-xs text-slate-400 py-6 text-center">No tickets logged yet.</p>
+          <p className="text-xs text-slate-400 py-6 text-center">
+            No tickets logged yet.
+          </p>
         ) : (
           <div className="divide-y divide-slate-100">
             {tickets.slice(0, 5).map((t) => (
@@ -413,7 +465,10 @@ export const DashboardPage: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <PriorityBadge priority={t.priority} />
                   <StatusPill status={t.status} />
-                  <SlaTimerBadge resolutionDueAt={t.resolution_due_at} status={t.status} />
+                  <SlaTimerBadge
+                    resolutionDueAt={t.resolution_due_at}
+                    status={t.status}
+                  />
                 </div>
               </div>
             ))}
